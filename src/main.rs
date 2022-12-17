@@ -67,14 +67,7 @@ async fn main() {
         .intents(INTENTS)
         .setup(|ctx, _ready, framework| 
             Box::pin(async move { 
-                //Override slash commands to update them
-                let commands = &framework.options().commands;
-                let create_commands = poise::builtins::create_application_commands(commands);
-
-                serenity::Command::set_global_application_commands(ctx, |b| {
-                    *b = create_commands; // replace the given builder with the one prepared by poise
-                    b
-                }).await?;
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
                 Ok(data) 
             }
