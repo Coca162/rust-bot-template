@@ -1,4 +1,4 @@
-use crate::commands::{Context, Error};
+use crate::{Context, Error};
 
 /// Pong!
 #[poise::command(slash_command, prefix_command, track_edits)]

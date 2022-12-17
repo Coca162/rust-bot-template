@@ -2,8 +2,8 @@ use std::env;
 use std::env::VarError;
 
 use dotenvy::dotenv;
-use sqlx::postgres::PgPoolOptions;
-use commands::{Data, ping::pong, help::help};
+use sqlx::{PgPool, postgres::PgPoolOptions};
+use commands::{ping::pong, help::help};
 
 use poise::{serenity_prelude as serenity, Prefix};
 use serenity::GatewayIntents;
@@ -13,20 +13,30 @@ mod commands;
 // You might want to change this to include more privileged intents or to make it not be so broad
 const INTENTS: GatewayIntents = GatewayIntents::non_privileged().union(serenity::GatewayIntents::MESSAGE_CONTENT);
 
+pub type Context<'a> = poise::Context<'a, Data, Error>;
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+
+// Data shared across commands and events
+pub struct Data {
+    pub db: PgPool
+}
+
 #[tokio::main]
 async fn main() {
     // Placed here so nobody forgets to add a new command to the command handler
     let commands = vec![help(), pong()];
 
-    dotenv().expect("A .env file does not exist!");
-
-    // These are done at runtime so changes can be made when running the bot without the need of a recompilation
-    let token = env::var("DISCORD_TOKEN").expect("No discord token found in .env");
-    let database_url = env::var("DATABASE_URL").expect("No database url found in .env");
-    let (primary_prefix, addition_prefixes) = parse_prefixes();
+    if matches!(dotenv(), Err(_)) && !not_using_dotenv() {
+        println!("You have not included a .env file! If this is intentional you can disable this warning with `DISABLE_NO_DOTENV_WARNING=1`")
+    }
 
     // Logging with configuration from environment variables via the `env-filter` feature
     tracing_subscriber::fmt::init();
+
+    // These are done at runtime so changes can be made when running the bot without the need of a recompilation
+    let token = env::var("DISCORD_TOKEN").expect("No discord token found in environment variables");
+    let database_url = env::var("DATABASE_URL").expect("No database url found in environment variables");
+    let (primary_prefix, addition_prefixes) = parse_prefixes();
 
     // Setting up database connections
     let db = PgPoolOptions::new()
@@ -73,17 +83,28 @@ async fn main() {
     framework.run().await.unwrap();
 }
 
+fn not_using_dotenv() -> bool {
+    match env::var("DISABLE_NO_DOTENV_WARNING") {
+        Ok(value) if value == "1" => true,
+        Ok(value) if value == "0" => false,
+        Ok(_) => {
+            panic!("DISABLE_NO_DOTENV_WARNING environment variable is equal to something other then 1 or 0")
+        }
+        Err(_) => false,
+    }
+}
+
 fn parse_prefixes() -> (Option<String>, Vec<Prefix>) {
     let unparsed = match env::var("PREFIXES") {
         Ok(unparsed) => unparsed,
         // The defaults for prefix & additional_prefixes is these
         Err(VarError::NotPresent) => return (None, Vec::new()),
-        _ => panic!("Could not handle the .env variable for prefixes")
+        _ => panic!("Could not handle the environment variable for prefixes")
     };
 
     let mut split = unparsed.split(' ').map(|x| x.to_string());
 
-    let first = split.next().expect("Could not parse prefixes from .env");
+    let first = split.next().expect("Could not parse prefixes from environment variables");
 
     // We need to leak these strings since `Prefix::Literal` only accepts `&'static str` for some reason
     let split = split.map(|x| Box::leak(Box::new(x))).map(|x| Prefix::Literal(x));

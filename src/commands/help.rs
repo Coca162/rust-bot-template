@@ -1,4 +1,4 @@
-use crate::commands::{Context, Error};
+use crate::{Context, Error};
 
 /// Show this menu
 #[poise::command(slash_command, prefix_command, track_edits)]
