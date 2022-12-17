@@ -1,0 +1,23 @@
+[package]
+name = "insert_name_here"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+poise = "0.5.2"
+dotenvy = "0.15.6"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+
+[dependencies.tokio]
+version = "1.23.0"
+features = ["macros", "signal", "rt-multi-thread"]
+
+[dependencies.sqlx]
+version = "0.6.2"
+features = [ "macros", "runtime-tokio-rustls", "postgres" ]
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3
