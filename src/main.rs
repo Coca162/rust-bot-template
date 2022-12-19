@@ -1,9 +1,9 @@
 use std::env;
 use std::env::VarError;
 
+use commands::{help::help, ping::pong};
 use dotenvy::dotenv;
-use sqlx::{PgPool, postgres::PgPoolOptions};
-use commands::{ping::pong, help::help};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use poise::{serenity_prelude as serenity, Prefix};
 use serenity::GatewayIntents;
@@ -11,14 +11,15 @@ use serenity::GatewayIntents;
 mod commands;
 
 // You might want to change this to include more privileged intents or to make it not be so broad
-const INTENTS: GatewayIntents = GatewayIntents::non_privileged().union(serenity::GatewayIntents::MESSAGE_CONTENT);
+const INTENTS: GatewayIntents =
+    GatewayIntents::non_privileged().union(serenity::GatewayIntents::MESSAGE_CONTENT);
 
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 // Data shared across commands and events
 pub struct Data {
-    pub db: PgPool
+    pub db: PgPool,
 }
 
 #[tokio::main]
@@ -39,7 +40,8 @@ async fn main() {
 
     // These are done at runtime so changes can be made when running the bot without the need of a recompilation
     let token = env::var("DISCORD_TOKEN").expect("No discord token found in environment variables");
-    let database_url = env::var("DATABASE_URL").expect("No database url found in environment variables");
+    let database_url =
+        env::var("DATABASE_URL").expect("No database url found in environment variables");
     let (primary_prefix, addition_prefixes) = parse_prefixes();
 
     // Setting up database connections
@@ -54,14 +56,16 @@ async fn main() {
         .await
         .expect("Unable to apply migrations!");
 
-    let data = Data { db };
+    let data = Data { db: db.clone() };
 
-    let framework = poise::Framework::builder()
+    let framework_builder = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: primary_prefix,
                 additional_prefixes: addition_prefixes,
-                edit_tracker: Some(poise::EditTracker::for_timespan(std::time::Duration::from_secs(120))),
+                edit_tracker: Some(poise::EditTracker::for_timespan(
+                    std::time::Duration::from_secs(120),
+                )),
                 ..Default::default()
             },
             commands,
@@ -69,15 +73,34 @@ async fn main() {
         })
         .token(token)
         .intents(INTENTS)
-        .setup(|ctx, _ready, framework| 
-            Box::pin(async move { 
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
-                Ok(data) 
-            }
-        ));
+                Ok(data)
+            })
+        });
 
-    framework.run().await.unwrap();
+    // Build the framework
+    let framework = framework_builder
+        .build()
+        .await
+        .expect("Cannot build the bot framework!");
+
+    // ctrl+c handler for graceful shutdowns
+    let shard_handler = framework.shard_manager().clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Cannot register a ctrl+c handler!");
+
+        tracing::info!("Shutting down the bot!");
+        shard_handler.lock().await.shutdown_all().await;
+        db.close().await;
+    });
+
+    tracing::info!("Starting the bot!");
+    framework.start().await.unwrap();
 }
 
 fn not_using_dotenv() -> bool {
@@ -96,15 +119,19 @@ fn parse_prefixes() -> (Option<String>, Vec<Prefix>) {
         Ok(unparsed) => unparsed,
         // The defaults for prefix & additional_prefixes is these
         Err(VarError::NotPresent) => return (None, Vec::new()),
-        _ => panic!("Could not handle the environment variable for prefixes")
+        _ => panic!("Could not handle the environment variable for prefixes"),
     };
 
     let mut split = unparsed.split(' ').map(|x| x.to_string());
 
-    let first = split.next().expect("Could not parse prefixes from environment variables");
+    let first = split
+        .next()
+        .expect("Could not parse prefixes from environment variables");
 
     // We need to leak these strings since `Prefix::Literal` only accepts `&'static str` for some reason
-    let split = split.map(|x| Box::leak(Box::new(x))).map(|x| Prefix::Literal(x));
+    let split = split
+        .map(|x| Box::leak(Box::new(x)))
+        .map(|x| Prefix::Literal(x));
 
     (Some(first), split.collect())
 }
