@@ -26,9 +26,13 @@ async fn main() {
     // Placed here so nobody forgets to add a new command to the command handler
     let commands = vec![help(), pong()];
 
-    if matches!(dotenv(), Err(_)) && !not_using_dotenv() {
-        println!("You have not included a .env file! If this is intentional you can disable this warning with `DISABLE_NO_DOTENV_WARNING=1`")
-    }
+    if let Err(err) = dotenv() {
+        if err.not_found() && !not_using_dotenv() {
+            println!("You have not included a .env file! If this is intentional you can disable this warning with `DISABLE_NO_DOTENV_WARNING=1`")
+        } else {
+            panic!("Panicked on dotenv error: {}", err);
+        }
+    };
 
     // Logging with configuration from environment variables via the `env-filter` feature
     tracing_subscriber::fmt::init();
