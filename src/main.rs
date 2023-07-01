@@ -7,6 +7,8 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use poise::{serenity_prelude as serenity, Prefix};
 use serenity::GatewayIntents;
+use tracing::{log::warn, metadata::LevelFilter};
+use tracing_subscriber::EnvFilter;
 
 mod commands;
 
@@ -27,16 +29,24 @@ async fn main() {
     // Placed here so nobody forgets to add a new command to the command handler
     let commands = vec![help(), pong()];
 
-    if let Err(err) = dotenv() {
-        if err.not_found() && !not_using_dotenv() {
-            println!("You have not included a .env file! If this is intentional you can disable this warning with `DISABLE_NO_DOTENV_WARNING=1`")
-        } else {
-            panic!("Panicked on dotenv error: {}", err);
-        }
-    };
-
     // Logging with configuration from environment variables via the `env-filter` feature
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::WARN.into())
+                .from_env_lossy(),
+        )
+        .init();
+
+    match dotenv() {
+        Ok(_) => (),
+        Err(err) if err.not_found() => {
+            if !not_using_dotenv() {
+                warn!("You have not included a .env file! If this is intentional you can disable this warning with `DISABLE_NO_DOTENV_WARNING=1`")
+            }
+        }
+        Err(err) => panic!("Dotenv error: {}", err),
+    }
 
     // These are done at runtime so changes can be made when running the bot without the need of a recompilation
     let token = env::var("DISCORD_TOKEN").expect("No discord token found in environment variables");
@@ -50,11 +60,11 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    // Makes sure the sql tables are updated to the latest definitions
-    sqlx::migrate!()
-        .run(&db)
-        .await
-        .expect("Unable to apply migrations!");
+    // // Makes sure the sql tables are updated to the latest definitions
+    // sqlx::migrate!()
+    //     .run(&db)
+    //     .await
+    //     .expect("Unable to apply migrations!");
 
     let data = Data { db: db.clone() };
 
@@ -104,13 +114,20 @@ async fn main() {
 }
 
 fn not_using_dotenv() -> bool {
-    match env::var("DISABLE_NO_DOTENV_WARNING") {
-        Ok(value) if value == "1" => true,
-        Ok(value) if value == "0" => false,
+    match env::var("DISABLE_NO_DOTENV_WARNING")
+        .map(|x| x.to_ascii_lowercase())
+        .as_deref()
+    {
+        Ok("1" | "true") => true,
+        Ok("0" | "false") => false,
         Ok(_) => {
-            panic!("DISABLE_NO_DOTENV_WARNING environment variable is equal to something other then 1 or 0")
+            panic!("DISABLE_NO_DOTENV_WARNING environment variable is not a valid value (1/0/true/false)")
         }
-        Err(_) => false,
+        Err(VarError::NotPresent) => false,
+        Err(VarError::NotUnicode(err)) => panic!(
+            "DISABLE_NO_DOTENV_WARNING environment variable is not set to valid Unicode, found: {:?}",
+            err
+        ),
     }
 }
 
