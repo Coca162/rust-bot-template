@@ -60,11 +60,11 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    // // Makes sure the sql tables are updated to the latest definitions
-    // sqlx::migrate!()
-    //     .run(&db)
-    //     .await
-    //     .expect("Unable to apply migrations!");
+    // Makes sure the sql tables are updated to the latest definitions
+    sqlx::migrate!()
+        .run(&db)
+        .await
+        .expect("Unable to apply migrations!");
 
     let data = Data { db: db.clone() };
 
